@@ -20,35 +20,104 @@ class Order:
         and filters out non-delivered orders unless specified
         """
         # Hint: Within this instance method, you have access to the instance of the class Order in the variable self, as well as all its attributes
-        pass  # YOUR CODE HERE
+        orders = self.data['orders'].copy()
+
+        if is_delivered:
+            orders = orders[orders['order_status'] == 'delivered'].copy()
+
+        for col in [
+            'order_purchase_timestamp',
+            'order_delivered_customer_date',
+            'order_estimated_delivery_date'
+        ]:
+            orders[col] = pd.to_datetime(orders[col])
+
+        orders['wait_time'] = (
+            orders['order_delivered_customer_date']
+            - orders['order_purchase_timestamp']
+        ).dt.total_seconds() / 86400
+
+        orders['expected_wait_time'] = (
+            orders['order_estimated_delivery_date']
+            - orders['order_purchase_timestamp']
+        ).dt.total_seconds() / 86400
+
+        orders['delay_vs_expected'] = (
+            orders['order_delivered_customer_date']
+            - orders['order_estimated_delivery_date']
+        ).dt.total_seconds() / 86400
+
+        orders['delay_vs_expected'] = orders['delay_vs_expected'].clip(lower=0)
+
+        return orders[[
+            'order_id',
+            'wait_time',
+            'expected_wait_time',
+            'delay_vs_expected',
+            'order_status'
+        ]]
 
     def get_review_score(self):
         """
         Returns a DataFrame with:
         order_id, dim_is_five_star, dim_is_one_star, review_score
         """
-        pass  # YOUR CODE HERE
+        reviews = self.data['order_reviews'].copy()
+
+        reviews['dim_is_five_star'] = (reviews['review_score'] == 5).astype(int)
+        reviews['dim_is_one_star'] = (reviews['review_score'] == 1).astype(int)
+
+        return reviews[[
+            'order_id',
+            'dim_is_five_star',
+            'dim_is_one_star',
+            'review_score'
+        ]]
 
     def get_number_items(self):
         """
         Returns a DataFrame with:
         order_id, number_of_items
         """
-        pass  # YOUR CODE HERE
+        items = self.data['order_items'].copy()
+
+        number_items = (
+            items.groupby('order_id')
+            .size()
+            .reset_index(name='number_of_items')
+        )
+
+        return number_items
 
     def get_number_sellers(self):
         """
         Returns a DataFrame with:
         order_id, number_of_sellers
         """
-        pass  # YOUR CODE HERE
+        items = self.data['order_items'].copy()
+
+        sellers = (
+            items.groupby('order_id')['seller_id']
+            .nunique()
+            .reset_index(name='number_of_sellers')
+        )
+
+        return sellers
 
     def get_price_and_freight(self):
         """
         Returns a DataFrame with:
         order_id, price, freight_value
         """
-        pass  # YOUR CODE HERE
+        items = self.data['order_items'].copy()
+
+        price_freight = (
+            items.groupby('order_id')[['price', 'freight_value']]
+            .sum()
+            .reset_index()
+        )
+
+        return price_freight
 
     # Optional
     def get_distance_seller_customer(self):
@@ -69,4 +138,37 @@ class Order:
         'distance_seller_customer']
         """
         # Hint: make sure to re-use your instance methods defined above
-        pass  # YOUR CODE HERE
+        training_data = self.get_wait_time(is_delivered=is_delivered)
+
+        training_data = training_data.merge(
+            self.get_review_score(),
+            on='order_id',
+            how='inner'
+        )
+
+        training_data = training_data.merge(
+            self.get_number_items(),
+            on='order_id',
+            how='inner'
+        )
+
+        training_data = training_data.merge(
+            self.get_number_sellers(),
+            on='order_id',
+            how='inner'
+        )
+
+        training_data = training_data.merge(
+            self.get_price_and_freight(),
+            on='order_id',
+            how='inner'
+        )
+
+        if with_distance_seller_customer:
+            training_data = training_data.merge(
+                self.get_distance_seller_customer(),
+                on='order_id',
+                how='inner'
+            )
+
+        return training_data.dropna()
