@@ -141,8 +141,38 @@ class Seller:
         Returns a DataFrame with:
         'seller_id', 'share_of_five_stars', 'share_of_one_stars', 'review_score'
         """
+        # 1. Obtener las reseñas
+        reviews = self.order.get_review_score()
 
-        pass  # YOUR CODE HERE
+        # 2. Obtener los pedidos y sus vendedores
+        order_items = self.data['order_items'][
+            ['order_id', 'seller_id']
+        ].drop_duplicates()
+
+        # 3. Unir las tablas
+        df = order_items.merge(reviews, on='order_id')
+        review_cost ={1: 100, 2: 50, 3: 40, 4: 0, 5: 0}
+        df['cost_of_reviews'] = df['review_score'].map(review_cost)
+
+        # 4. Calcular las métricas por vendedor
+        seller_reviews = df.groupby('seller_id').agg({
+            'review_score': 'mean',
+            'dim_is_five_star': 'mean',
+            'dim_is_one_star': 'mean',
+            'cost_of_reviews': 'sum',
+        })
+
+        # 5. Renombrar las columnas
+        seller_reviews = seller_reviews.rename(columns={
+            'dim_is_five_star': 'share_of_five_stars',
+            'dim_is_one_star': 'share_of_one_stars'
+        })
+
+        # 6. Convertir seller_id en una columna normal
+        seller_reviews = seller_reviews.reset_index()
+
+        # 7. Devolver el resultado
+        return seller_reviews
 
     def get_training_data(self):
         """
@@ -168,5 +198,11 @@ class Seller:
         if self.get_review_score() is not None:
             training_set = training_set.merge(self.get_review_score(),
                                               on='seller_id')
-
+        training_set['revenue'] = (
+            training_set['sales'] * 0.10
+            + training_set['months_on_olist'] * 80
+        )
+        training_set['profits'] = (
+            training_set['revenue'] - training_set['cost_of_reviews']
+        )
         return training_set
